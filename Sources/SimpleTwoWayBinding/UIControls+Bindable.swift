@@ -5,7 +5,7 @@
 //  Created by Manish Katoch on 11/26/17.
 //
 
-import Foundation
+import UIKit
 
 extension UITextField : Bindable {
     public typealias BindingType = String
@@ -82,15 +82,28 @@ public class BindableTextView: UITextView, Bindable, UITextViewDelegate {
         }
     }
     
-    public func bind(with observable: Observable<String>) {
+    public func bind(replay: Bool = false, with observable: Observable<String>) -> BindingReceipt {
         self.delegate = self
         self.register(for: observable)
-        self.observe(for: observable) { [weak self] (value) in
+        let r = self.observe(for: observable) { [weak self] (value) in
             self?.updateValue(with: value)
         }
+        if let s = observable.value {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateValue(with: s)
+            }
+            
+        }
+        return r
     }
     
     public func textViewDidChange(_ textView: UITextView) {
         self.valueChanged()
     }
+}
+
+extension UILabel: Bindable {
+    public typealias BindingType = String
+    public func observingValue() -> String? { text }
+    public func updateValue(with value: String) { text = value }
 }

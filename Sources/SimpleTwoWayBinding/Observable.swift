@@ -6,33 +6,66 @@
 //
 
 import Foundation
+import UIKit
+
+public struct BindingReceipt: Hashable, Identifiable {
+    public let id = UUID()
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    public static func == (lhs: BindingReceipt, rhs: BindingReceipt) -> Bool { lhs.id == rhs.id }
+}
 
 public class Observable<ObservedType> {
     public typealias Observer = (_ observable: Observable<ObservedType>, ObservedType) -> Void
-    
-    private var observers: [Observer]
-    
+
+    /// Map of receipt objects to the binding blocks those objects represent; see bind(observer:) and unbind(:)
+    private var observers: [BindingReceipt: Observer] = [:]
+    /// Map of other observers we've been bound to; see map(:) & other functional conveniences. This allows us to hold strong references to the anonymous observables generated in a chained series of calls, and break them when needed.
+    private var bindings: [BindingReceipt: () -> Void] = [:]
+
+    internal var paused: Bool = false
+
     public var value: ObservedType? {
-        didSet {
-            if let value = value {
-                notifyObservers(value)
-            }
+        didSet { fire() }
+    }
+
+    /// Notify all observers with the current value if non-nil.
+    public func fire() {
+        if let value = value {
+            notifyObservers(value)
         }
     }
-    
+
     public init(_ value: ObservedType? = nil) {
         self.value = value
-        observers = []
     }
-    
-    public func bind(observer: @escaping Observer) {
-        self.observers.append(observer)
+
+    @discardableResult
+    public func bind(observer: @escaping Observer) -> BindingReceipt {
+        let r = BindingReceipt()
+        observers[r] = observer
+        return r
     }
-    
-    private func notifyObservers(_ value: ObservedType) {
-        self.observers.forEach { [unowned self](observer) in
+
+    public func setObserving(_ referenceHolder: @escaping () -> Void, receipt: BindingReceipt) {
+        bindings[receipt] = referenceHolder
+    }
+
+    public func unbind(_ r: BindingReceipt) {
+        guard observers[r] != nil else {
+            print("Warning: attempted to unbind with an invalid receipt")
+            return
+        }
+        observers[r] = nil
+        bindings[r] = nil
+    }
+
+    internal func notifyObservers(_ value: ObservedType) {
+        observers.values.forEach { [unowned self] observer in
+            guard paused == false else { return }
             observer(self, value)
         }
     }
-}
 
+
+
+}

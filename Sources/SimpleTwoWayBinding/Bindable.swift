@@ -12,7 +12,7 @@ public protocol Bindable: NSObjectProtocol {
     associatedtype BindingType: Equatable
     func observingValue() -> BindingType?
     func updateValue(with value: BindingType)
-    func bind(with observable: Observable<BindingType>)
+    func bind(with observable: Observable<BindingType>) -> BindingReceipt
 }
 
 fileprivate struct AssociatedKeys {
@@ -53,17 +53,46 @@ extension Bindable where Self: NSObject {
         }
     }
 
-    public func bind(with observable: Observable<BindingType>) {
-        if let _self = self as? UIControl {
-            _self.addTarget(Selector, action: Selector{ [weak self] in self?.valueChanged() }, for: [.editingChanged, .valueChanged])
+    @discardableResult
+    public func bind(with observable: Observable<BindingType>) -> BindingReceipt {
+
+        if self is UIControl {
+            let sleeve = ActionClosure {
+                [weak self] in
+                self?.valueChanged()
+            }
+
+            (self as! UIControl).addTarget(sleeve, action: #selector(ActionClosure.invoke), for: [.valueChanged, .editingChanged])
+
+            objc_setAssociatedObject(self, memoryAddress, sleeve, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         }
+
         self.binder = observable
         if let val = observable.value {
             self.updateValue(with: val)
         }
-        self.observe(for: observable) { (value) in
+
+        return self.observe(for: observable) { (value) in
             self.updateValue(with: value)
         }
+    }    
+}
+
+
+extension NSObject {
+    fileprivate var memoryAddress: String {
+        String(format: "%p", unsafeBitCast(self, to: UInt.self))
     }
-    
+
+    @objc fileprivate final class ActionClosure: NSObject {
+        let closure: () -> Void
+
+        init(_ closure: @escaping () -> Void) {
+            self.closure = closure
+        }
+
+        @objc func invoke() {
+            closure()
+        }
+    }
 }
